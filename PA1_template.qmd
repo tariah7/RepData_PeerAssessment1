@@ -1,0 +1,217 @@
+---
+title: "Course 5 Project"
+author: "Victor Tariah"
+format: html
+editor: visual
+---
+
+## Review Criteria
+
+1.  Code for reading in the dataset and/or processing the data
+
+2.  Histogram of the total number of steps taken each day
+
+3.  Mean and median number of steps taken each day
+
+4.  Time series plot of the average number of steps taken
+
+5.  The 5-minute interval that, on average, contains the maximum number of steps
+
+6.  Code to describe and show a strategy for imputing missing data
+
+7.  Histogram of the total number of steps taken each day after missing values are imputed
+
+8.  Panel plot comparing the average number of steps taken per 5-minute interval across weekdays and weekends
+
+9.  All of the R code needed to reproduce the results (numbers, plots, etc.) in the report
+
+## Running Code
+
+1.  **Loading and Preprocessing the data**
+
+```{r message=FALSE}
+## Loading the packages and libraries I'll be using
+#install.packages('chron')
+library(chron) 
+library(data.table)
+library(dplyr)
+library(ggplot2)
+```
+
+Load data with fread
+
+```{r}
+# load data into mie
+mie <- data.table::fread(unzip("activity.zip"),fill=TRUE)
+
+# Observing data
+head(mie)
+str(mie)
+```
+
+The date variable is already a factor and the instructions allows for ignoring the NA values so I won't be doing anything to the data for now.
+
+**2. What is mean total number of steps taken per day?**
+
+I start by grouping the data by date, and then calculating the sum of steps by each date.
+
+```{r}
+steps_per_day <- mie %>%
+    group_by(date) %>%
+    summarize(sum_steps = sum(steps),  .groups = 'drop')
+```
+
+**2a. Plotting the histogram of total number of steps taken per day**
+
+```{r histogram1, fig.width=8, fig.height=6}
+with(
+    steps_per_day,
+    hist(
+        sum_steps,
+        xlab = "Total no of steps each day",
+        main = "Histogram of Total Number of steps taken each day",
+        col = "red",
+        border = "black",
+        labels = TRUE
+    )
+)
+```
+
+**\
+3. Calculating the mean and median of steps with the summarize function in dplyr package\
+**
+
+```{r}
+steps_per_day %>%
+    filter(complete.cases(.)) %>%
+    summarize(mean = mean(sum_steps), median = median(sum_steps))
+```
+
+After removing the NA vales, which would affect the final results, the mean total number of steps is *10766.19* and the median is *10765*.
+
+4.  **What is the average daily activity pattern?**
+
+Here's a time series plot of the **5-minute** interval and average number of steps taken, averaged across all days using **ggplot2**.
+
+To prepare the data for the plot, the original data is grouped based on interval, then the NA values are removed, and lastly the mean of the steps is calculated.
+
+```{r}
+mean_interval <- mie %>% group_by(interval) %>%
+    na.omit() %>%
+    summarize(avg_step = mean(steps), .groups = 'drop')
+```
+
+```{}
+```
+
+```{r timeseries1, fig.width=8, fig.height=6}
+ggplot(mean_interval, aes(interval, avg_step)) +
+    geom_line() +
+    labs(x = "Intervals", y = "Average steps taken") +
+    ggtitle("Time series of Average steps taken during 5 minute interval") +
+    theme_bw()
+```
+
+To find the **max** number of steps, the filter function is used.
+
+```{r}
+mean_interval %>% filter(avg_step == max(avg_step))
+```
+
+**5. Imputing missing values**
+
+Using the ***summarise_all*** function from ***dplyr*** to find total missing values.
+
+```{r}
+mie %>% summarise_all(~sum(is.na(.)))
+```
+
+To fill in the missing values;
+
+*a. use a for loop to iterate over all the rows, also, all the rows with missing values.*
+
+*b. Create an index variable to store the indexes that match with the interval of data table mean_interval.*
+
+*c. Assign the values of average steps to the ones that are missing in the new data table.*
+
+```{r}
+# create new data table
+complete_dt <- mie
+
+# loop over all rows
+for (j in 1:nrow(complete_dt)) {
+    if(is.na(complete_dt$steps[j])) {
+        # match indexes of new datatable interval with mean_interval
+        index <- which(complete_dt$interval[j] == mean_interval$interval)
+        # assign average step to NA at ith row of step column
+        complete_dt$steps[j] <- mean_interval[index,]$avg_step
+    }
+}
+```
+
+```{r}
+# perform necessary transformation
+hist_complete_dt <- complete_dt %>%
+    group_by(date) %>%
+    summarize(sum_steps = sum(steps), .groups = 'drop')
+
+```
+
+```{r histogram2, fig.width=8, fig.height=6}
+# plot histogram
+with(
+    hist_complete_dt,
+    hist(
+        sum_steps,
+        xlab = "Total no of steps each day",
+        main = "Histogram of Total Number of steps taken each day",
+        col = "blue",
+        border = "black",
+        labels = TRUE
+    )
+)
+```
+
+Calculating the mean and median
+
+```{r}
+hist_complete_dt %>%
+    summarize(mean = mean(sum_steps), median = median(sum_steps))
+```
+
+The mean and median calculated with the new dataset is now identical. By imputing the averages of steps to the missing values, it caused the median to move slightly towards the mean, which makes sense.
+
+**6. Are there differences in activity patterns between weekdays and weekends?**
+
+Using the ***chron package***, to factorize the date column.
+
+```{r}
+
+#library(chron) 
+w_complete_dt <- complete_dt %>%
+    mutate(date = chron::is.weekend(date))
+```
+
+Using ***ggplot2*** to plot a new time series, in order to make a comparison between weekdays and weekends.
+
+```{r}
+# transforming data for plotting
+w_timeseries <- w_complete_dt %>% group_by(date, interval) %>%
+    summarize(avg_step = mean(steps), .groups = 'drop')
+
+# changing labels for more appropriate names
+labels <- as_labeller(c(`TRUE` = "Weekend", `FALSE` = "Weekday"))
+
+```
+
+```{r timeseries2, fig.width=8, fig.height=6}
+# plot time series with ggplot
+ggplot(w_timeseries, aes(interval, avg_step, color=date)) +
+    geom_line() +
+    facet_wrap(~date, nrow=2, labeller= labels)+
+    labs(x = "Intervals", y = "Average steps taken") +
+    ggtitle("Time series of Average steps taken Weekday vs Weekend") +
+    theme_bw()
+```
+
+As you can see, two panels have been produced. One with weekdays and the other weekends. A brief look at the plot, weekday has a big spike in step taken, whereas the weekend has more steps on average. But this is still the exploratory phase and no strong conclusions can be made.
